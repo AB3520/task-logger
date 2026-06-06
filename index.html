@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Shift Task Logger</title>
+<style>
+  :root {
+    --bg: #111;
+    --panel: #1d1d1d;
+    --panel2: #252525;
+    --text: #f1f1f1;
+    --muted: #aaa;
+    --green: #1f8f4d;
+    --yellow: #c79816;
+    --red: #b73737;
+    --blue: #2d6cdf;
+    --border: #3a3a3a;
+  }
+
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  header {
+    padding: 8px 16px;
+    background: #181818;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  main {
+    padding: 16px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+
+  .row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .new-item-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto auto;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .new-item-grid select {
+    width: 135px;
+  }
+
+  .new-item-grid button {
+    min-width: 84px;
+  }
+
+  input, select, button, textarea {
+    font: inherit;
+  }
+
+  input, select, textarea {
+    background: #0f0f0f;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+  }
+
+  input[type="text"] {
+    min-width: 180px;
+    flex: 1;
+  }
+
+  input[type="time"] {
+    width: 130px;
+  }
+
+  button {
+    color: white;
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-weight: 650;
+  }
+
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .start { background: var(--green); }
+  .clock-in { background: #14a44d; width: 100%; }
+  .pause { background: var(--yellow); }
+  .revive { background: #7a654a; }
+  .stop { background: var(--red); }
+  .blue { background: var(--blue); }
+  .gray { background: #555; }
+
+  .small-button {
+    padding: 7px 9px;
+    font-size: 0.85rem;
+  }
+
+  .task {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+
+  .task-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+
+  .label {
+    font-size: 1.1rem;
+    font-weight: 750;
+  }
+
+  .timer {
+    font-size: 1.4rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+  }
+
+  .muted {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .metrics-strip {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 10px;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
+
+  .metrics-strip strong {
+    color: var(--text);
+    font-weight: 750;
+  }
+
+  details.settings {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0;
+    margin-bottom: 14px;
+  }
+
+  details.settings summary {
+    cursor: pointer;
+    font-weight: 750;
+    padding: 14px;
+  }
+
+  details.settings .settings-content {
+    border-top: 1px solid var(--border);
+    padding: 14px;
+  }
+
+  .saved-report {
+    background: #141414;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    margin-top: 10px;
+  }
+
+  .saved-report-title {
+    font-weight: 750;
+    margin-bottom: 8px;
+  }
+
+  .settings-section {
+    margin-bottom: 14px;
+  }
+
+  .settings-section h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+  }
+
+  .inline-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .inline-toggle input {
+    min-width: auto;
+    flex: 0;
+  }
+
+  .edit-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .edit-grid label {
+    display: block;
+  }
+
+  .edit-grid input,
+  .edit-grid select {
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .task-actions {
+    justify-content: flex-end;
+    margin-top: 12px;
+  }
+
+  #runningTasks:not(:empty) {
+    margin-top: 12px;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(0, 0, 0, 0.72);
+    z-index: 20;
+  }
+
+  .modal-backdrop.open {
+    display: flex;
+  }
+
+  .modal {
+    width: min(420px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+  }
+
+  .modal h2 {
+    margin: 0 0 8px;
+    font-size: 1.05rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 14px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+  }
+
+  th, td {
+    border-bottom: 1px solid var(--border);
+    padding: 8px;
+    text-align: left;
+    font-size: 0.9rem;
+  }
+
+  th {
+    color: var(--muted);
+    font-weight: 650;
+  }
+
+  @media (max-width: 600px) {
+    .row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .new-item-grid {
+      grid-template-columns: 1fr auto;
+    }
+
+    .new-item-grid input {
+      grid-column: 1 / -1;
+    }
+
+    .new-item-grid select {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .new-item-grid button {
+      width: auto;
+      min-width: 92px;
+    }
+
+    input[type="time"], button, select {
+      width: 100%;
+    }
+
+    .new-item-grid button {
+      width: auto;
+    }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Shift Task Logger</h1>
+</header>
+
+<main>
+  <div class="metrics-strip">
+    <span>Logged/Left/Total</span>
+    <strong>
+      <span id="totalLogged">00:00</span>/<span id="timeLeft">00:00</span>/<span id="shiftLength">00:00</span>
+    </strong>
+  </div>
+
+  <section class="panel">
+    <h2 style="margin-top:0;">New item</h2>
+    <div class="new-item-grid">
+      <input id="taskLabel" type="text" placeholder="Example: Area/Asset PM" />
+      <select id="taskType">
+        <option value="">No type</option>
+        <option value="PM">PM</option>
+        <option value="Reactive">Reactive</option>
+        <option value="Repair">Repair</option>
+        <option value="Other">Other</option>
+      </select>
+      <button class="start" onclick="startTask()">Start</button>
+    </div>
+    <div id="runningTasks"></div>
+  </section>
+
+  <section class="panel">
+    <h2 style="margin-top:0;">Tasks</h2>
+    <div id="tasks"></div>
+    <div class="row task-actions">
+      <button class="blue small-button" onclick="downloadReport()">Download report</button>
+      <button class="gray small-button" onclick="copyReport()">Copy report</button>
+    </div>
+    <button id="clockInButton" class="clock-in" onclick="clockIn()">Clock in</button>
+    <div id="clockInEdit"></div>
+  </section>
+
+  <details class="settings">
+    <summary>Saved reports</summary>
+    <div id="savedReports" class="settings-content"></div>
+  </details>
+
+  <details class="settings">
+    <summary>Settings</summary>
+    <div class="settings-content">
+      <div class="settings-section">
+        <h3>Shift</h3>
+        <div class="row">
+          <label>
+            <div class="muted">USER</div>
+            <input id="userName" type="text" placeholder="Name, handle, or clock #" onchange="saveSettingsAndRender()" />
+          </label>
+          <label>
+            <div class="muted">Shift start</div>
+            <input id="shiftStart" type="time" value="20:00" onchange="saveSettingsAndRender()" />
+          </label>
+          <label>
+            <div class="muted">Shift end</div>
+            <input id="shiftEnd" type="time" value="08:00" onchange="saveSettingsAndRender()" />
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Task Stacking</h3>
+        <div class="row">
+          <label class="inline-toggle">
+            <input id="taskStacking" type="checkbox" onchange="saveSettingsAndRender()" />
+            Task stacking
+          </label>
+          <div id="gapSettings" class="row">
+            <label>
+              <div class="muted">Min gap</div>
+              <input id="gapMin" type="number" min="0" value="3" onchange="saveSettingsAndRender()" />
+            </label>
+            <label>
+              <div class="muted">Max gap</div>
+              <input id="gapMax" type="number" min="0" value="10" onchange="saveSettingsAndRender()" />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Edit</h3>
+        <label class="inline-toggle">
+          <input id="editEnabled" type="checkbox" onchange="saveSettingsAndRender()" />
+          Enable Edit
+        </label>
+      </div>
+    </div>
+  </details>
+
+  <button class="gray" style="width:100%;" onclick="clearCurrentTasks()">Clear all tasks</button>
+</main>
+
+<div id="activeTaskModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="activeTaskTitle">
+  <div class="modal">
+    <h2 id="activeTaskTitle">Active timer running</h2>
+    <div id="activeTaskMessage" class="muted"></div>
+    <div class="modal-actions">
+      <button class="gray" onclick="closeActiveTaskModal()">Cancel</button>
+      <button class="pause" onclick="pauseActiveAndStartPending()">Pause active and start new task</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let tasks = JSON.parse(localStorage.getItem("shiftTasks") || "[]");
+let savedReports = JSON.parse(localStorage.getItem("shiftSavedReports") || "[]");
+let clockInAt = localStorage.getItem("shiftClockInAt") || "";
+let settings = JSON.parse(localStorage.getItem("shiftSettings") || "{}");
+let pendingStart = null;
+
+function save() {
+  localStorage.setItem("shiftTasks", JSON.stringify(tasks));
+  localStorage.setItem("shiftClockInAt", clockInAt);
+}
+
+function saveReports() {
+  localStorage.setItem("shiftSavedReports", JSON.stringify(savedReports));
+}
+
+function saveSettings() {
+  localStorage.setItem("shiftSettings", JSON.stringify(settings));
+}
+
+function saveSettingsAndRender() {
+  settings = readSettings();
+  saveSettings();
+  render();
+}
+
+function nowISO() {
+  return new Date().toISOString();
+}
+
+function formatDateTime(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString();
+}
+
+function formatDate(isoOrDate) {
+  return new Date(isoOrDate).toISOString().slice(0, 10);
+}
+
+function toDateTimeLocalValue(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocalValue(value) {
+  if (!value) return "";
+  return new Date(value).toISOString();
+}
+
+function secondsBetween(a, b) {
+  return Math.max(0, Math.floor((new Date(b) - new Date(a)) / 1000));
+}
+
+function formatSeconds(totalSeconds) {
+  totalSeconds = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return [h, m, s].map(n => String(n).padStart(2, "0")).join(":");
+}
+
+function formatHoursMinutes(totalSeconds) {
+  totalSeconds = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  return [h, m].map(n => String(n).padStart(2, "0")).join(":");
+}
+
+function displayTaskLabel(task) {
+  const label = task.label || "";
+  const type = task.type || "";
+  if (!type || label.toLowerCase().endsWith(type.toLowerCase())) return label;
+  return `${label} - ${type}`;
+}
+
+function readSettings() {
+  return {
+    userName: document.getElementById("userName").value.trim(),
+    shiftStart: document.getElementById("shiftStart").value || "20:00",
+    shiftEnd: document.getElementById("shiftEnd").value || "08:00",
+    taskStacking: document.getElementById("taskStacking").checked,
+    gapMin: Number(document.getElementById("gapMin").value || 3),
+    gapMax: Number(document.getElementById("gapMax").value || 10),
+    editEnabled: document.getElementById("editEnabled").checked
+  };
+}
+
+function applySettings() {
+  document.getElementById("userName").value = settings.userName || "";
+  document.getElementById("shiftStart").value = settings.shiftStart || "20:00";
+  document.getElementById("shiftEnd").value = settings.shiftEnd || "08:00";
+  document.getElementById("taskStacking").checked = Boolean(settings.taskStacking);
+  document.getElementById("gapMin").value = Number.isFinite(settings.gapMin) ? settings.gapMin : 3;
+  document.getElementById("gapMax").value = Number.isFinite(settings.gapMax) ? settings.gapMax : 10;
+  document.getElementById("editEnabled").checked = Boolean(settings.editEnabled);
+  document.getElementById("gapSettings").style.display = settings.taskStacking ? "flex" : "none";
+}
+
+function clockIn() {
+  if (clockInAt && !confirm("Replace the existing clock-in time?")) return;
+  clockInAt = nowISO();
+  save();
+  render();
+}
+
+function applyClockInEdit() {
+  const input = document.getElementById("clockInEditInput");
+  const value = input ? input.value : "";
+  if (!value) return;
+  if (!confirm("Change the clock-in time?")) {
+    render();
+    return;
+  }
+
+  clockInAt = fromDateTimeLocalValue(value);
+  save();
+  render();
+}
+
+function getElapsedSeconds(task) {
+  let elapsed = task.elapsedBeforePause || 0;
+
+  if (task.status === "running" && task.currentStart) {
+    elapsed += secondsBetween(task.currentStart, nowISO());
+  }
+
+  return elapsed;
+}
+
+function getNewTaskDraft() {
+  const labelInput = document.getElementById("taskLabel");
+  const typeInput = document.getElementById("taskType");
+
+  let label = labelInput.value.trim();
+  const type = typeInput.value.trim();
+
+  if (!label && type) label = type;
+  if (!label) {
+    alert("Enter a label first, like Area/Asset PM.");
+    return null;
+  }
+
+  return { label, type };
+}
+
+function createTask(label, type) {
+  if (!clockInAt) clockInAt = nowISO();
+
+  const task = {
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
+    label,
+    type,
+    status: "running",
+    createdAt: nowISO(),
+    firstStart: nowISO(),
+    currentStart: nowISO(),
+    completedAt: "",
+    elapsedBeforePause: 0,
+    pauseCount: 0,
+    notes: ""
+  };
+
+  tasks.unshift(task);
+  document.getElementById("taskLabel").value = "";
+  save();
+  render();
+}
+
+function startTask() {
+  const draft = getNewTaskDraft();
+  if (!draft) return;
+
+  const runningTask = tasks.find(t => t.status === "running");
+  if (runningTask) {
+    showActiveTaskModal(runningTask, draft);
+    return;
+  }
+
+  createTask(draft.label, draft.type);
+}
+
+function showActiveTaskModal(runningTask, draft) {
+  pendingStart = draft;
+  document.getElementById("activeTaskMessage").textContent =
+    `"${displayTaskLabel(runningTask)}" is running. Pause it and start "${displayTaskLabel(draft)}"?`;
+  document.getElementById("activeTaskModal").classList.add("open");
+}
+
+function closeActiveTaskModal() {
+  pendingStart = null;
+  document.getElementById("activeTaskModal").classList.remove("open");
+}
+
+function pauseActiveAndStartPending() {
+  if (!pendingStart) {
+    closeActiveTaskModal();
+    return;
+  }
+
+  const runningTask = tasks.find(t => t.status === "running");
+  if (runningTask) {
+    runningTask.elapsedBeforePause = getElapsedSeconds(runningTask);
+    runningTask.currentStart = "";
+    runningTask.status = "paused";
+    runningTask.pauseCount = (runningTask.pauseCount || 0) + 1;
+  }
+
+  const draft = pendingStart;
+  pendingStart = null;
+  document.getElementById("activeTaskModal").classList.remove("open");
+  createTask(draft.label, draft.type);
+}
+
+function pauseTask(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task || task.status !== "running") return;
+
+  task.elapsedBeforePause = getElapsedSeconds(task);
+  task.currentStart = "";
+  task.status = "paused";
+  task.pauseCount = (task.pauseCount || 0) + 1;
+
+  save();
+  render();
+}
+
+function resumeTask(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task || task.status !== "paused") return;
+
+  const runningTask = tasks.find(t => t.status === "running");
+  if (runningTask) {
+    alert(`Finish, pause, or stop "${runningTask.label}" before resuming another item.`);
+    return;
+  }
+
+  task.currentStart = nowISO();
+  task.status = "running";
+
+  save();
+  render();
+}
+
+function stopTask(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task || task.status === "stopped") return;
+
+  task.elapsedBeforePause = getElapsedSeconds(task);
+  task.completedAt = nowISO();
+  task.currentStart = "";
+  task.status = "stopped";
+
+  save();
+  render();
+}
+
+function reviveTask(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task || task.status !== "stopped") return;
+
+  const runningTask = tasks.find(t => t.status === "running");
+  if (runningTask) {
+    alert(`Finish, pause, or stop "${runningTask.label}" before reviving another item.`);
+    return;
+  }
+
+  task.currentStart = nowISO();
+  task.completedAt = "";
+  task.status = "running";
+
+  save();
+  render();
+}
+
+function deleteTask(id) {
+  if (!confirm("Delete this item?")) return;
+  tasks = tasks.filter(t => t.id !== id);
+  save();
+  render();
+}
+
+function updateNotes(id, value) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  task.notes = value;
+  save();
+}
+
+function updateTaskField(id, field, value) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+
+  if (field === "firstStart" || field === "completedAt") {
+    task[field] = fromDateTimeLocalValue(value);
+  } else if (field === "elapsedBeforePause") {
+    task.elapsedBeforePause = Math.max(0, Number(value || 0));
+    if (task.status === "running") task.currentStart = nowISO();
+  } else {
+    task[field] = value;
+  }
+
+  save();
+  render();
+}
+
+function shiftLengthSeconds() {
+  const start = document.getElementById("shiftStart").value || "20:00";
+  const end = document.getElementById("shiftEnd").value || "08:00";
+
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+
+  let startMin = sh * 60 + sm;
+  let endMin = eh * 60 + em;
+
+  if (endMin <= startMin) endMin += 24 * 60;
+
+  return (endMin - startMin) * 60;
+}
+
+function shiftWindow(referenceDate = new Date()) {
+  const start = document.getElementById("shiftStart").value || "20:00";
+  const end = document.getElementById("shiftEnd").value || "08:00";
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+
+  const startDate = new Date(referenceDate);
+  startDate.setHours(sh, sm, 0, 0);
+
+  const endDate = new Date(referenceDate);
+  endDate.setHours(eh, em, 0, 0);
+
+  if (endDate <= startDate) endDate.setDate(endDate.getDate() + 1);
+  if (referenceDate < startDate) {
+    startDate.setDate(startDate.getDate() - 1);
+    endDate.setDate(endDate.getDate() - 1);
+  }
+
+  return { startDate, endDate };
+}
+
+function reportAnchorDate() {
+  const dates = [
+    clockInAt,
+    ...tasks.map(t => t.firstStart || t.createdAt)
+  ].filter(Boolean).map(value => new Date(value));
+
+  if (!dates.length) return new Date();
+  return new Date(Math.min(...dates.map(date => date.getTime())));
+}
+
+function stableRandom(seed) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  return Math.abs(Math.sin(hash) * 10000) % 1;
+}
+
+function randomGapSeconds(task, index) {
+  const min = Math.max(0, Number(settings.gapMin ?? 3));
+  const max = Math.max(min, Number(settings.gapMax ?? 10));
+  const minutes = min + Math.floor(stableRandom(`${task.id}-${index}`) * (max - min + 1));
+  return minutes * 60;
+}
+
+function stackedTaskTimes(orderedTasks) {
+  const { startDate } = shiftWindow(reportAnchorDate());
+  let cursor = new Date(startDate);
+
+  return orderedTasks.map((task, index) => {
+    if (index > 0) {
+      cursor = new Date(cursor.getTime() + randomGapSeconds(task, index) * 1000);
+    }
+
+    const start = new Date(cursor);
+    const stop = new Date(start.getTime() + getElapsedSeconds(task) * 1000);
+    cursor = new Date(stop);
+    return { start, stop };
+  });
+}
+
+function buildReport(useStacking = settings.taskStacking) {
+  const blocks = [];
+
+  if (settings.userName) {
+    blocks.push(`USER - ${settings.userName}`);
+  }
+
+  if (clockInAt) {
+    blocks.push(`Clock in - ${formatDateTime(clockInAt)}`);
+  }
+
+  const orderedTasks = tasks.slice().reverse();
+  const stackedTimes = useStacking ? stackedTaskTimes(orderedTasks) : [];
+
+  const taskBlocks = orderedTasks.map((t, index) => {
+    const stacked = stackedTimes[index];
+    const startTime = stacked ? formatDateTime(stacked.start.toISOString()) : formatDateTime(t.firstStart);
+    const stopTime = stacked
+      ? formatDateTime(stacked.stop.toISOString())
+      : t.completedAt ? formatDateTime(t.completedAt) : "Open";
+    const notes = (t.notes || "").trim() || "None";
+
+    return [
+      displayTaskLabel(t),
+      `${formatSeconds(getElapsedSeconds(t))} - ${startTime} - ${stopTime}`,
+      notes
+    ].join("\n");
+  });
+
+  return [...blocks, ...taskBlocks].join("\n\n");
+}
+
+function downloadTextReport(report, filename) {
+  const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadReport() {
+  const report = buildReport(settings.taskStacking);
+  const stamp = new Date().toISOString().slice(0, 10);
+  downloadTextReport(report, `shift-report-${stamp}.txt`);
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("Report copied.");
+  } catch {
+    const fallback = document.createElement("textarea");
+    fallback.value = text;
+    fallback.style.position = "fixed";
+    fallback.style.left = "-9999px";
+    document.body.appendChild(fallback);
+    fallback.focus();
+    fallback.select();
+
+    if (document.execCommand("copy")) {
+      alert("Report copied.");
+    } else {
+      alert("Could not use clipboard automatically. Use Download report instead.");
+    }
+
+    fallback.remove();
+  }
+}
+
+async function copyReport() {
+  await copyText(buildReport(settings.taskStacking));
+}
+
+function reportHasContent() {
+  return Boolean(clockInAt) || tasks.length > 0;
+}
+
+function saveCurrentReport(shiftEndDate = formatDate(shiftWindow(reportAnchorDate()).endDate), silent = false) {
+  if (!reportHasContent()) return false;
+
+  const reports = {
+    stacked: buildReport(true),
+    unstacked: buildReport(false)
+  };
+  const report = settings.taskStacking ? reports.stacked : reports.unstacked;
+  const existing = savedReports.find(r => r.shiftEndDate === shiftEndDate);
+
+  if (existing) {
+    existing.reports = reports;
+    existing.report = report;
+    existing.savedAt = nowISO();
+  } else {
+    savedReports.unshift({
+      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
+      shiftEndDate,
+      savedAt: nowISO(),
+      reports,
+      report
+    });
+  }
+
+  saveReports();
+  renderSavedReports();
+  if (!silent) alert(`Report saved for ${shiftEndDate}.`);
+  return true;
+}
+
+function checkAutoSaveReport() {
+  const { endDate } = shiftWindow(reportAnchorDate());
+  const dueAt = new Date(endDate.getTime() + 60 * 60 * 1000);
+  const shiftEndDate = formatDate(endDate);
+  const saved = savedReports.find(r => r.shiftEndDate === shiftEndDate);
+
+  if (new Date() >= dueAt && (!saved || !saved.reports)) {
+    saveCurrentReport(shiftEndDate, true);
+  }
+}
+
+function downloadSavedReport(id) {
+  const saved = savedReports.find(r => r.id === id);
+  if (!saved) return;
+  downloadTextReport(getSavedReportText(saved), `shift-report-${saved.shiftEndDate}.txt`);
+}
+
+async function copySavedReport(id) {
+  const saved = savedReports.find(r => r.id === id);
+  if (!saved) return;
+  await copyText(getSavedReportText(saved));
+}
+
+function getSavedReportText(saved) {
+  if (saved.reports) {
+    return settings.taskStacking
+      ? saved.reports.stacked
+      : saved.reports.unstacked;
+  }
+
+  return saved.report || "";
+}
+
+function deleteSavedReport(id) {
+  if (!confirm("Delete this saved report?")) return;
+  savedReports = savedReports.filter(r => r.id !== id);
+  saveReports();
+  renderSavedReports();
+}
+
+function createTaskCard(task, displayTimes = null) {
+  const elapsed = getElapsedSeconds(task);
+  const displayStart = displayTimes ? displayTimes.start.toISOString() : task.firstStart;
+  const displayStop = displayTimes
+    ? displayTimes.stop.toISOString()
+    : task.completedAt;
+  const editBlock = settings.editEnabled ? `
+    <div class="edit-grid">
+      <label>
+        <div class="muted">Task name</div>
+        <input type="text" value="${escapeAttr(task.label || "")}" onchange="updateTaskField('${task.id}', 'label', this.value)" />
+      </label>
+      <label>
+        <div class="muted">Type</div>
+        <select onchange="updateTaskField('${task.id}', 'type', this.value)">
+          <option value="" ${!task.type ? "selected" : ""}>No type</option>
+          <option value="PM" ${task.type === "PM" ? "selected" : ""}>PM</option>
+          <option value="Reactive" ${task.type === "Reactive" ? "selected" : ""}>Reactive</option>
+          <option value="Repair" ${task.type === "Repair" ? "selected" : ""}>Repair</option>
+          <option value="Other" ${task.type === "Other" ? "selected" : ""}>Other</option>
+        </select>
+      </label>
+      <label>
+        <div class="muted">Start</div>
+        <input type="datetime-local" value="${escapeAttr(toDateTimeLocalValue(task.firstStart))}" onchange="updateTaskField('${task.id}', 'firstStart', this.value)" />
+      </label>
+      <label>
+        <div class="muted">Stop</div>
+        <input type="datetime-local" value="${escapeAttr(toDateTimeLocalValue(task.completedAt))}" onchange="updateTaskField('${task.id}', 'completedAt', this.value)" />
+      </label>
+      <label>
+        <div class="muted">Elapsed seconds</div>
+        <input type="number" min="0" value="${elapsed}" onchange="updateTaskField('${task.id}', 'elapsedBeforePause', this.value)" />
+      </label>
+    </div>
+  ` : "";
+
+  const div = document.createElement("div");
+  div.className = "task";
+
+  const buttons = task.status === "running"
+    ? `<button class="pause" onclick="pauseTask('${task.id}')">Pause</button>
+       <button class="stop" onclick="stopTask('${task.id}')">Stop</button>`
+    : task.status === "paused"
+    ? `<button class="start" onclick="resumeTask('${task.id}')">Resume</button>
+       <button class="stop" onclick="stopTask('${task.id}')">Stop</button>`
+    : `<button class="revive" onclick="reviveTask('${task.id}')">Revive</button>
+       <button class="gray" disabled>Stopped</button>`;
+
+  div.innerHTML = `
+    <div class="task-title">
+      <div>
+        <div class="label">${escapeHTML(displayTaskLabel(task))}</div>
+        <div class="muted">
+          ${escapeHTML(task.status.toUpperCase())}
+          - Started ${escapeHTML(formatDateTime(displayStart))}
+          ${displayStop ? " - Completed " + escapeHTML(formatDateTime(displayStop)) : ""}
+        </div>
+      </div>
+      <div class="timer" data-timer-id="${escapeAttr(task.id)}">${formatSeconds(elapsed)}</div>
+    </div>
+    <div class="row">
+      ${buttons}
+      <button class="gray" onclick="deleteTask('${task.id}')">Delete</button>
+    </div>
+    <div style="margin-top:10px;">
+      <input
+        type="text"
+        value="${escapeAttr(task.notes || "")}"
+        placeholder="Optional notes"
+        oninput="updateNotes('${task.id}', this.value)"
+        style="width:100%; box-sizing:border-box;"
+      />
+    </div>
+    ${editBlock}
+  `;
+
+  return div;
+}
+
+function updateLiveDisplay() {
+  let total = 0;
+  const timerElements = document.querySelectorAll("[data-timer-id]");
+
+  for (const task of tasks) {
+    const elapsed = getElapsedSeconds(task);
+    total += elapsed;
+
+    const timer = Array.from(timerElements).find(el => el.dataset.timerId === task.id);
+    if (timer) timer.textContent = formatSeconds(elapsed);
+  }
+
+  const shift = shiftLengthSeconds();
+  const left = Math.max(0, shift - total);
+
+  document.getElementById("totalLogged").textContent = formatHoursMinutes(total);
+  document.getElementById("shiftLength").textContent = formatHoursMinutes(shift);
+  document.getElementById("timeLeft").textContent = formatHoursMinutes(left);
+}
+
+function renderSavedReports() {
+  const container = document.getElementById("savedReports");
+  container.innerHTML = "";
+
+  if (!savedReports.length) {
+    container.innerHTML = `<div class="muted">No saved reports yet.</div>`;
+    return;
+  }
+
+  for (const saved of savedReports) {
+    const div = document.createElement("div");
+    div.className = "saved-report";
+    div.innerHTML = `
+      <div class="saved-report-title">${escapeHTML(saved.shiftEndDate)}</div>
+      <div class="muted">Saved ${escapeHTML(formatDateTime(saved.savedAt))}</div>
+      <div class="muted">Copy/Download uses current ${settings.taskStacking ? "stacked" : "unstacked"} setting</div>
+      <div class="row" style="margin-top:8px;">
+        <button class="blue small-button" onclick="downloadSavedReport('${saved.id}')">Download</button>
+        <button class="gray small-button" onclick="copySavedReport('${saved.id}')">Copy</button>
+        <button class="stop small-button" onclick="deleteSavedReport('${saved.id}')">Delete</button>
+      </div>
+    `;
+    container.appendChild(div);
+  }
+}
+
+function render() {
+  applySettings();
+  const runningContainer = document.getElementById("runningTasks");
+  const container = document.getElementById("tasks");
+  const clockInButton = document.getElementById("clockInButton");
+  const clockInEdit = document.getElementById("clockInEdit");
+  runningContainer.innerHTML = "";
+  container.innerHTML = "";
+
+  const displayOrder = tasks.slice().reverse();
+  const stackedTimes = settings.taskStacking ? stackedTaskTimes(displayOrder) : [];
+  const displayTimesById = new Map(displayOrder.map((task, index) => [task.id, stackedTimes[index]]));
+
+  for (const task of tasks) {
+    const target = task.status === "running" ? runningContainer : container;
+    target.appendChild(createTaskCard(task, displayTimesById.get(task.id)));
+  }
+
+  updateLiveDisplay();
+  renderSavedReports();
+
+  clockInButton.textContent = clockInAt
+    ? `Clocked in ${formatDateTime(clockInAt)}`
+    : "Clock in";
+
+  clockInEdit.innerHTML = settings.editEnabled ? `
+    <div class="edit-grid">
+      <label>
+        <div class="muted">Clock in time</div>
+        <input id="clockInEditInput" type="datetime-local" value="${escapeAttr(toDateTimeLocalValue(clockInAt))}" />
+      </label>
+      <label>
+        <div class="muted">&nbsp;</div>
+        <button class="blue" onclick="applyClockInEdit()">Apply clock in time</button>
+      </label>
+    </div>
+  ` : "";
+}
+
+function clearCurrentTasks() {
+  if (!confirm("Clear all current tasks and clock-in from the interface? Saved reports will remain.")) return;
+  tasks = [];
+  clockInAt = "";
+  save();
+  render();
+}
+
+function escapeHTML(str) {
+  return String(str).replace(/[&<>"']/g, ch => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[ch]));
+}
+
+function escapeAttr(str) {
+  return escapeHTML(str);
+}
+
+setInterval(() => {
+  updateLiveDisplay();
+  checkAutoSaveReport();
+}, 1000);
+
+window.addEventListener("focus", checkAutoSaveReport);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) checkAutoSaveReport();
+});
+
+render();
+checkAutoSaveReport();
+</script>
+</body>
+</html>
