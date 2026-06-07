@@ -298,6 +298,10 @@
     padding: 14px;
   }
 
+  .modal.wide {
+    width: min(820px, 100%);
+  }
+
   .modal h2 {
     margin: 0 0 8px;
     font-size: 1.05rem;
@@ -308,6 +312,31 @@
     gap: 8px;
     justify-content: flex-end;
     margin-top: 14px;
+  }
+
+  .report-preview {
+    width: 100%;
+    min-height: 360px;
+    box-sizing: border-box;
+    resize: vertical;
+    white-space: pre;
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    font-size: 0.9rem;
+    line-height: 1.35;
+  }
+
+  .summary-grid {
+    display: grid;
+    gap: 8px;
+  }
+
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+    padding: 6px 0;
+    font-variant-numeric: tabular-nums;
   }
 
   table {
@@ -405,6 +434,7 @@
     <h2 style="margin-top:0;">Tasks</h2>
     <div id="tasks"></div>
     <div class="row task-actions">
+      <button class="blue small-button" onclick="openReportReview()">Review report</button>
       <button class="blue small-button" onclick="downloadReport()">Download report</button>
       <button class="gray small-button" onclick="copyReport()">Copy report</button>
     </div>
@@ -412,9 +442,19 @@
     <div id="clockInEdit"></div>
   </section>
 
+  <button class="stop" style="width:100%; margin-bottom:14px;" onclick="endShift()">End shift</button>
+
   <details class="settings">
     <summary>Saved reports</summary>
-    <div id="savedReports" class="settings-content"></div>
+    <div class="settings-content">
+      <input id="savedReportSearch" type="text" placeholder="Search saved reports" oninput="renderSavedReports()" style="width:100%; box-sizing:border-box;" />
+      <div id="savedReports"></div>
+    </div>
+  </details>
+
+  <details class="settings">
+    <summary>Shift summary</summary>
+    <div id="shiftSummary" class="settings-content"></div>
   </details>
 
   <details class="settings">
@@ -459,6 +499,23 @@
       </div>
 
       <div class="settings-section">
+        <h3>Report</h3>
+        <div class="row">
+          <label>
+            <div class="muted">Report mode</div>
+            <select id="reportMode" onchange="saveSettingsAndRender()">
+              <option value="detailed">Detailed</option>
+              <option value="compact">Compact</option>
+            </select>
+          </label>
+          <label>
+            <div class="muted">Compact Reactive max minutes</div>
+            <input id="compactReactiveMax" type="number" min="1" value="5" onchange="saveSettingsAndRender()" />
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <h3>Edit</h3>
         <label class="inline-toggle">
           <input id="editEnabled" type="checkbox" onchange="saveSettingsAndRender()" />
@@ -478,6 +535,18 @@
     <div class="modal-actions">
       <button class="gray" onclick="closeActiveTaskModal()">Cancel</button>
       <button id="activeTaskAction" class="pause" onclick="pauseActiveAndContinue()">Pause active and start new task</button>
+    </div>
+  </div>
+</div>
+
+<div id="reportReviewModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reportReviewTitle">
+  <div class="modal wide">
+    <h2 id="reportReviewTitle">Review report</h2>
+    <textarea id="reportPreview" class="report-preview" readonly></textarea>
+    <div class="modal-actions">
+      <button class="gray" onclick="closeReportReview()">Close</button>
+      <button class="blue" onclick="downloadReviewedReport()">Download report</button>
+      <button class="gray" onclick="copyReviewedReport()">Copy report</button>
     </div>
   </div>
 </div>
@@ -515,11 +584,29 @@ function nowISO() {
 
 function formatDateTime(iso) {
   if (!iso) return "";
-  return new Date(iso).toLocaleString();
+  const date = ceilDateToMinute(new Date(iso));
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const yy = String(date.getFullYear()).slice(-2);
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${mm}/${dd}/${yy} ${hh}:${min}`;
 }
 
 function formatDate(isoOrDate) {
-  return new Date(isoOrDate).toISOString().slice(0, 10);
+  const date = new Date(isoOrDate);
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const yy = String(date.getFullYear()).slice(-2);
+  return `${mm}/${dd}/${yy}`;
+}
+
+function formatDateSlug(isoOrDate) {
+  const date = new Date(isoOrDate);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function toDateTimeLocalValue(iso) {
@@ -534,20 +621,40 @@ function fromDateTimeLocalValue(value) {
   return new Date(value).toISOString();
 }
 
+function ceilDateToMinute(date) {
+  const rounded = new Date(date);
+  if (
+    rounded.getSeconds() > 0 ||
+    rounded.getMilliseconds() > 0
+  ) {
+    rounded.setMinutes(rounded.getMinutes() + 1);
+  }
+  rounded.setSeconds(0, 0);
+  return rounded;
+}
+
+function shiftISO(iso, deltaMs) {
+  if (!iso || !deltaMs) return iso;
+  return new Date(new Date(iso).getTime() + deltaMs).toISOString();
+}
+
 function secondsBetween(a, b) {
   return Math.max(0, Math.floor((new Date(b) - new Date(a)) / 1000));
 }
 
-function formatSeconds(totalSeconds) {
-  totalSeconds = Math.max(0, Math.floor(totalSeconds));
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  return [h, m, s].map(n => String(n).padStart(2, "0")).join(":");
+function roundedDisplaySeconds(totalSeconds) {
+  totalSeconds = Math.max(0, Number(totalSeconds) || 0);
+  if (totalSeconds <= 0) return 0;
+  return Math.max(60, Math.ceil(totalSeconds / 60) * 60);
 }
 
-function formatHoursMinutes(totalSeconds) {
-  totalSeconds = Math.max(0, Math.floor(totalSeconds));
+function roundedTaskSeconds(totalSeconds) {
+  totalSeconds = Math.max(0, Number(totalSeconds) || 0);
+  return Math.max(60, Math.ceil(totalSeconds / 60) * 60);
+}
+
+function formatDuration(totalSeconds) {
+  totalSeconds = roundedDisplaySeconds(totalSeconds);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   return [h, m].map(n => String(n).padStart(2, "0")).join(":");
@@ -556,7 +663,13 @@ function formatHoursMinutes(totalSeconds) {
 function displayTaskLabel(task) {
   const label = task.label || "";
   const type = task.type || "";
-  if (!type || label.toLowerCase().endsWith(type.toLowerCase())) return label;
+  if (!type) return label;
+  const normalizedLabel = label.toLowerCase();
+  const normalizedType = type.toLowerCase();
+  if (
+    normalizedLabel.endsWith(normalizedType) ||
+    normalizedLabel.includes(` - ${normalizedType}`)
+  ) return label;
   return `${label} - ${type}`;
 }
 
@@ -582,6 +695,8 @@ function readSettings() {
     taskStacking: document.getElementById("taskStacking").checked,
     gapMin: Number(document.getElementById("gapMin").value || 3),
     gapMax: Number(document.getElementById("gapMax").value || 10),
+    reportMode: document.getElementById("reportMode").value || "detailed",
+    compactReactiveMax: Number(document.getElementById("compactReactiveMax").value || 5),
     editEnabled: document.getElementById("editEnabled").checked
   };
 }
@@ -593,6 +708,8 @@ function applySettings() {
   document.getElementById("taskStacking").checked = Boolean(settings.taskStacking);
   document.getElementById("gapMin").value = Number.isFinite(settings.gapMin) ? settings.gapMin : 3;
   document.getElementById("gapMax").value = Number.isFinite(settings.gapMax) ? settings.gapMax : 10;
+  document.getElementById("reportMode").value = settings.reportMode || "detailed";
+  document.getElementById("compactReactiveMax").value = Number.isFinite(settings.compactReactiveMax) ? settings.compactReactiveMax : 5;
   document.getElementById("editEnabled").checked = Boolean(settings.editEnabled);
   document.getElementById("gapSettings").style.display = settings.taskStacking ? "flex" : "none";
 }
@@ -618,7 +735,7 @@ function applyClockInEdit() {
   render();
 }
 
-function getElapsedSeconds(task) {
+function getRawElapsedSeconds(task) {
   let elapsed = task.elapsedBeforePause || 0;
 
   if (task.status === "running" && task.currentStart) {
@@ -626,6 +743,10 @@ function getElapsedSeconds(task) {
   }
 
   return elapsed;
+}
+
+function getElapsedSeconds(task) {
+  return roundedTaskSeconds(getRawElapsedSeconds(task));
 }
 
 function getNewTaskDraft() {
@@ -670,7 +791,7 @@ function createTask(label, type, notes = "") {
 function createTaskCopy(sourceTask, action) {
   createTask(
     `${displayTaskLabel(sourceTask)} - ${action}`,
-    ""
+    sourceTask.type || ""
   );
 }
 
@@ -731,7 +852,7 @@ function pauseActiveAndContinue() {
 
   const runningTask = taskEntries().find(t => t.status === "running");
   if (runningTask) {
-    runningTask.elapsedBeforePause = getElapsedSeconds(runningTask);
+    runningTask.elapsedBeforePause = getRawElapsedSeconds(runningTask);
     runningTask.currentStart = "";
     runningTask.status = "paused";
     runningTask.pauseCount = (runningTask.pauseCount || 0) + 1;
@@ -755,7 +876,7 @@ function pauseTask(id) {
   const task = tasks.find(t => t.id === id);
   if (!task || task.status !== "running") return;
 
-  task.elapsedBeforePause = getElapsedSeconds(task);
+  task.elapsedBeforePause = getRawElapsedSeconds(task);
   task.currentStart = "";
   task.status = "paused";
   task.pauseCount = (task.pauseCount || 0) + 1;
@@ -797,7 +918,7 @@ function stopTask(id) {
   const task = tasks.find(t => t.id === id);
   if (!task || task.status === "stopped") return;
 
-  task.elapsedBeforePause = getElapsedSeconds(task);
+  task.elapsedBeforePause = getRawElapsedSeconds(task);
   task.completedAt = nowISO();
   task.currentStart = "";
   task.status = "stopped";
@@ -850,15 +971,150 @@ function updateNotes(id, value) {
   save();
 }
 
+function taskProjectedStop(task) {
+  if (!task || !task.firstStart) return null;
+  if (task.completedAt) return new Date(task.completedAt);
+  return new Date(new Date(task.firstStart).getTime() + getElapsedSeconds(task) * 1000);
+}
+
+function normalizeTaskDuration(task, seconds) {
+  task.elapsedBeforePause = roundedTaskSeconds(seconds);
+  if (task.status === "running") {
+    task.currentStart = nowISO();
+  }
+}
+
+function shiftTaskEntry(task, deltaMs) {
+  if (!deltaMs) return;
+  const rawElapsed = task.status === "running" ? getRawElapsedSeconds(task) : null;
+
+  task.createdAt = shiftISO(task.createdAt, deltaMs);
+  task.firstStart = shiftISO(task.firstStart, deltaMs);
+  task.completedAt = shiftISO(task.completedAt, deltaMs);
+
+  if (task.status === "running") {
+    task.elapsedBeforePause = rawElapsed;
+    task.currentStart = nowISO();
+  } else {
+    task.currentStart = shiftISO(task.currentStart, deltaMs);
+  }
+}
+
+function shiftNewerEntriesAfter(entryId, deltaMs) {
+  if (!deltaMs) return;
+  const orderedEntries = tasks.slice().reverse();
+  const editedIndex = orderedEntries.findIndex(entry => entry.id === entryId);
+  if (editedIndex < 0) return;
+
+  orderedEntries.slice(editedIndex + 1).forEach(entry => {
+    if (isDivider(entry)) {
+      entry.createdAt = shiftISO(entry.createdAt, deltaMs);
+    } else {
+      shiftTaskEntry(entry, deltaMs);
+    }
+  });
+}
+
+function recalculateEditedTask(task, field, value) {
+  const oldStop = taskProjectedStop(task);
+
+  if (field === "firstStart") {
+    const oldStart = task.firstStart ? new Date(task.firstStart) : null;
+    const newStartISO = fromDateTimeLocalValue(value);
+    if (!newStartISO) return 0;
+    const newStart = new Date(newStartISO);
+    const duration = getElapsedSeconds(task);
+    task.firstStart = newStartISO;
+    if (task.completedAt || task.status === "stopped") {
+      task.completedAt = new Date(newStart.getTime() + duration * 1000).toISOString();
+    }
+    if (task.status === "running") {
+      task.elapsedBeforePause = duration;
+      task.currentStart = nowISO();
+    } else if (oldStart && task.currentStart) {
+      task.currentStart = shiftISO(task.currentStart, newStart.getTime() - oldStart.getTime());
+    }
+  } else if (field === "completedAt") {
+    const newStopISO = fromDateTimeLocalValue(value);
+    if (!newStopISO) {
+      task.completedAt = "";
+      if (task.status === "stopped") task.status = "paused";
+      return 0;
+    }
+
+    if (!task.firstStart) task.firstStart = newStopISO;
+    const seconds = roundedTaskSeconds(secondsBetween(task.firstStart, newStopISO));
+    task.completedAt = new Date(new Date(task.firstStart).getTime() + seconds * 1000).toISOString();
+    task.elapsedBeforePause = seconds;
+    task.currentStart = "";
+    task.status = "stopped";
+  } else if (field === "elapsedMinutes") {
+    const seconds = roundedTaskSeconds(Math.max(0, Number(value || 0)) * 60);
+    normalizeTaskDuration(task, seconds);
+    if ((task.completedAt || task.status === "stopped") && task.firstStart) {
+      task.completedAt = new Date(new Date(task.firstStart).getTime() + seconds * 1000).toISOString();
+      task.status = "stopped";
+      task.currentStart = "";
+    }
+  }
+
+  const newStop = taskProjectedStop(task);
+  return oldStop && newStop ? newStop.getTime() - oldStop.getTime() : 0;
+}
+
+function buildEditWarnings(deltaMs) {
+  const warnings = [];
+  const orderedTasks = taskEntries().slice().reverse();
+
+  if (Math.abs(deltaMs) >= 30 * 60 * 1000) {
+    warnings.push(`This edit shifts newer entries by ${formatDuration(Math.abs(deltaMs) / 1000)}.`);
+  }
+
+  for (let i = 0; i < orderedTasks.length - 1; i++) {
+    const currentStop = taskProjectedStop(orderedTasks[i]);
+    const nextStart = orderedTasks[i + 1].firstStart ? new Date(orderedTasks[i + 1].firstStart) : null;
+    if (currentStop && nextStart && currentStop > nextStart) {
+      warnings.push(`Overlap: "${displayTaskLabel(orderedTasks[i])}" runs into "${displayTaskLabel(orderedTasks[i + 1])}".`);
+      break;
+    }
+  }
+
+  const { endDate } = shiftWindow(reportAnchorDate());
+  const pastShiftEnd = orderedTasks.find(task => {
+    const stop = taskProjectedStop(task);
+    return stop && stop > endDate;
+  });
+  if (pastShiftEnd) {
+    warnings.push(`This pushes "${displayTaskLabel(pastShiftEnd)}" past shift end.`);
+  }
+
+  return warnings;
+}
+
 function updateTaskField(id, field, value) {
   const task = tasks.find(t => t.id === id);
   if (!task) return;
 
   if (field === "firstStart" || field === "completedAt") {
-    task[field] = fromDateTimeLocalValue(value);
-  } else if (field === "elapsedBeforePause") {
-    task.elapsedBeforePause = Math.max(0, Number(value || 0));
-    if (task.status === "running") task.currentStart = nowISO();
+    const snapshot = JSON.stringify(tasks);
+    const deltaMs = recalculateEditedTask(task, field, value);
+    shiftNewerEntriesAfter(id, deltaMs);
+    const warnings = buildEditWarnings(deltaMs);
+    if (warnings.length && !confirm(`Review this edit:\n\n${warnings.join("\n")}\n\nApply anyway?`)) {
+      tasks = JSON.parse(snapshot);
+      render();
+      return;
+    }
+  } else if (field === "elapsedMinutes") {
+    const snapshot = JSON.stringify(tasks);
+    const deltaMs = recalculateEditedTask(task, field, value);
+    shiftNewerEntriesAfter(id, deltaMs);
+    const warnings = buildEditWarnings(deltaMs);
+    if (warnings.length && !confirm(`Review this edit:\n\n${warnings.join("\n")}\n\nApply anyway?`)) {
+      tasks = JSON.parse(snapshot);
+      render();
+      return;
+    }
   } else {
     task[field] = value;
   }
@@ -928,9 +1184,13 @@ function randomGapSeconds(task, index) {
   return minutes * 60;
 }
 
-function stackedTaskTimes(orderedTasks) {
-  const { startDate } = shiftWindow(reportAnchorDate());
-  let cursor = new Date(startDate);
+function stackedTaskTimes(orderedTasks, anchorDate = null) {
+  const fallback = shiftWindow(reportAnchorDate()).startDate;
+  let cursor = anchorDate
+    ? new Date(anchorDate)
+    : orderedTasks[0]?.firstStart
+      ? new Date(orderedTasks[0].firstStart)
+      : new Date(fallback);
 
   return orderedTasks.map((task, index) => {
     if (index > 0) {
@@ -944,7 +1204,94 @@ function stackedTaskTimes(orderedTasks) {
   });
 }
 
-function buildReport(useStacking = settings.taskStacking) {
+function reportType(task) {
+  return (task.type || "Other").trim() || "Other";
+}
+
+function reportTaskBlock(task, stackedTimesById) {
+  const stacked = stackedTimesById.get(task.id);
+  const startTime = stacked ? formatDateTime(stacked.start.toISOString()) : formatDateTime(task.firstStart);
+  const stopTime = task.status === "stopped"
+    ? stacked
+      ? formatDateTime(stacked.stop.toISOString())
+      : task.completedAt ? formatDateTime(task.completedAt) : "Open"
+    : "Open";
+  const notes = (task.notes || "").trim() || "None";
+
+  return [
+    displayTaskLabel(task),
+    `${formatDuration(getElapsedSeconds(task))} - ${startTime} - ${stopTime}`,
+    notes
+  ].join("\n");
+}
+
+function taskReportTimes(task, stackedTimesById) {
+  const stacked = stackedTimesById.get(task.id);
+  return {
+    start: stacked ? stacked.start : task.firstStart ? new Date(task.firstStart) : null,
+    stop: task.status === "stopped"
+      ? stacked ? stacked.stop : task.completedAt ? new Date(task.completedAt) : null
+      : null
+  };
+}
+
+function compactReactiveBlock(tasksToCompact, stackedTimesById) {
+  const total = tasksToCompact.reduce((sum, task) => sum + getElapsedSeconds(task), 0);
+  const times = tasksToCompact.map(task => taskReportTimes(task, stackedTimesById));
+  const starts = times.map(time => time.start).filter(Boolean);
+  const stops = times.map(time => time.stop).filter(Boolean);
+  const startTime = starts.length ? formatDateTime(new Date(Math.min(...starts.map(date => date.getTime()))).toISOString()) : "";
+  const stopTime = stops.length === tasksToCompact.length
+    ? formatDateTime(new Date(Math.max(...stops.map(date => date.getTime()))).toISOString())
+    : "Open";
+  const names = tasksToCompact.map(task => displayTaskLabel(task)).join("; ");
+  const notes = tasksToCompact
+    .map(task => (task.notes || "").trim())
+    .filter(Boolean)
+    .join("; ") || "None";
+  const maxMinutes = Number(settings.compactReactiveMax || 5);
+
+  return [
+    `Reactive tasks ${maxMinutes} min or less`,
+    `${formatDuration(total)} - ${startTime} - ${stopTime}`,
+    names,
+    notes
+  ].join("\n");
+}
+
+function groupedTaskReportBlocks(orderedTasks, stackedTimesById, mode = settings.reportMode || "detailed") {
+  const groups = [];
+  const groupMap = new Map();
+
+  for (const task of orderedTasks) {
+    const type = reportType(task);
+    if (!groupMap.has(type)) {
+      const group = { type, tasks: [] };
+      groupMap.set(type, group);
+      groups.push(group);
+    }
+    groupMap.get(type).tasks.push(task);
+  }
+
+  return groups.map(group => {
+    const total = group.tasks.reduce((sum, task) => sum + getElapsedSeconds(task), 0);
+    let taskBlocks = group.tasks.map(task => reportTaskBlock(task, stackedTimesById));
+
+    if (mode === "compact" && group.type.toLowerCase() === "reactive") {
+      const maxSeconds = Math.max(60, Number(settings.compactReactiveMax || 5) * 60);
+      const compactTasks = group.tasks.filter(task => getElapsedSeconds(task) <= maxSeconds);
+      const detailTasks = group.tasks.filter(task => getElapsedSeconds(task) > maxSeconds);
+      taskBlocks = [
+        ...(compactTasks.length ? [compactReactiveBlock(compactTasks, stackedTimesById)] : []),
+        ...detailTasks.map(task => reportTaskBlock(task, stackedTimesById))
+      ];
+    }
+
+    return [`${group.type} - Total ${formatDuration(total)}`, ...taskBlocks].join("\n\n");
+  });
+}
+
+function buildReport(useStacking = settings.taskStacking, mode = settings.reportMode || "detailed") {
   const blocks = [];
 
   if (settings.userName) {
@@ -955,34 +1302,14 @@ function buildReport(useStacking = settings.taskStacking) {
     blocks.push(`Clock in - ${formatDateTime(clockInAt)}`);
   }
 
-  const orderedEntries = tasks.slice().reverse();
-  const orderedTasks = orderedEntries.filter(entry => !isDivider(entry));
+  const orderedTasks = taskEntries().slice().reverse();
   const stackedTimes = useStacking ? stackedTaskTimes(orderedTasks) : [];
   const stackedTimesById = new Map(orderedTasks.map((task, index) => [task.id, stackedTimes[index]]));
 
-  const taskBlocks = orderedEntries.map((t) => {
-    if (isDivider(t)) {
-      return `Divider - ${formatDateTime(t.createdAt)}`;
-    }
-
-    const stacked = stackedTimesById.get(t.id);
-    const startTime = stacked ? formatDateTime(stacked.start.toISOString()) : formatDateTime(t.firstStart);
-    const stopTime = stacked
-      ? formatDateTime(stacked.stop.toISOString())
-      : t.completedAt ? formatDateTime(t.completedAt) : "Open";
-    const notes = (t.notes || "").trim() || "None";
-
-    return [
-      displayTaskLabel(t),
-      `${formatSeconds(getElapsedSeconds(t))} - ${startTime} - ${stopTime}`,
-      notes
-    ].join("\n");
-  });
-
-  return [...blocks, ...taskBlocks].join("\n\n");
+  return [...blocks, ...groupedTaskReportBlocks(orderedTasks, stackedTimesById, mode)].join("\n\n");
 }
 
-function buildSegmentReport(dividerId, useStacking = settings.taskStacking) {
+function buildSegmentReport(dividerId, useStacking = settings.taskStacking, mode = settings.reportMode || "detailed") {
   const orderedEntries = tasks.slice().reverse();
   const dividerIndex = orderedEntries.findIndex(entry => entry.id === dividerId);
   if (dividerIndex < 0) return "";
@@ -996,33 +1323,21 @@ function buildSegmentReport(dividerId, useStacking = settings.taskStacking) {
   const startIndex = previousDividerIndex === undefined ? 0 : previousDividerIndex + 1;
   const segmentEntries = orderedEntries.slice(startIndex, dividerIndex);
   const segmentTasks = segmentEntries.filter(entry => !isDivider(entry));
-  const stackedTimes = useStacking ? stackedTaskTimes(segmentTasks) : [];
-  const stackedTimesById = new Map(segmentTasks.map((task, index) => [task.id, stackedTimes[index]]));
+  if (!segmentTasks.length) return "";
+
+  const orderedTasks = orderedEntries.filter(entry => !isDivider(entry));
+  const stackedTimes = useStacking ? stackedTaskTimes(orderedTasks) : [];
+  const stackedTimesById = new Map(orderedTasks.map((task, index) => [task.id, stackedTimes[index]]));
 
   const blocks = [];
   if (settings.userName) blocks.push(`USER - ${settings.userName}`);
   if (clockInAt && startIndex === 0) blocks.push(`Clock in - ${formatDateTime(clockInAt)}`);
 
-  const taskBlocks = segmentTasks.map((task) => {
-    const stacked = stackedTimesById.get(task.id);
-    const startTime = stacked ? formatDateTime(stacked.start.toISOString()) : formatDateTime(task.firstStart);
-    const stopTime = stacked
-      ? formatDateTime(stacked.stop.toISOString())
-      : task.completedAt ? formatDateTime(task.completedAt) : "Open";
-    const notes = (task.notes || "").trim() || "None";
-
-    return [
-      displayTaskLabel(task),
-      `${formatSeconds(getElapsedSeconds(task))} - ${startTime} - ${stopTime}`,
-      notes
-    ].join("\n");
-  });
-
-  return [...blocks, ...taskBlocks].join("\n\n");
+  return [...blocks, ...groupedTaskReportBlocks(segmentTasks, stackedTimesById, mode)].join("\n\n");
 }
 
 async function copyDividerSegment(dividerId) {
-  const report = buildSegmentReport(dividerId, settings.taskStacking);
+  const report = buildSegmentReport(dividerId, settings.taskStacking, settings.reportMode || "detailed");
   if (!report) {
     alert("No tasks in this segment.");
     return;
@@ -1044,9 +1359,32 @@ function downloadTextReport(report, filename) {
 }
 
 function downloadReport() {
-  const report = buildReport(settings.taskStacking);
-  const stamp = new Date().toISOString().slice(0, 10);
+  const report = currentReportText();
+  const stamp = formatDateSlug(new Date());
   downloadTextReport(report, `shift-report-${stamp}.txt`);
+}
+
+function currentReportText() {
+  return buildReport(settings.taskStacking, settings.reportMode || "detailed");
+}
+
+function openReportReview() {
+  document.getElementById("reportPreview").value = currentReportText();
+  document.getElementById("reportReviewModal").classList.add("open");
+}
+
+function closeReportReview() {
+  document.getElementById("reportReviewModal").classList.remove("open");
+}
+
+function downloadReviewedReport() {
+  const report = document.getElementById("reportPreview").value;
+  const stamp = formatDateSlug(new Date());
+  downloadTextReport(report, `shift-report-${stamp}.txt`);
+}
+
+async function copyReviewedReport() {
+  await copyText(document.getElementById("reportPreview").value);
 }
 
 async function copyText(text) {
@@ -1073,7 +1411,7 @@ async function copyText(text) {
 }
 
 async function copyReport() {
-  await copyText(buildReport(settings.taskStacking));
+  await copyText(currentReportText());
 }
 
 function reportHasContent() {
@@ -1084,8 +1422,12 @@ function saveCurrentReport(shiftEndDate = formatDate(shiftWindow(reportAnchorDat
   if (!reportHasContent()) return false;
 
   const reports = {
-    stacked: buildReport(true),
-    unstacked: buildReport(false)
+    stacked: buildReport(true, settings.reportMode || "detailed"),
+    unstacked: buildReport(false, settings.reportMode || "detailed"),
+    detailedStacked: buildReport(true, "detailed"),
+    detailedUnstacked: buildReport(false, "detailed"),
+    compactStacked: buildReport(true, "compact"),
+    compactUnstacked: buildReport(false, "compact")
   };
   const report = settings.taskStacking ? reports.stacked : reports.unstacked;
   const existing = savedReports.find(r => r.shiftEndDate === shiftEndDate);
@@ -1110,6 +1452,30 @@ function saveCurrentReport(shiftEndDate = formatDate(shiftWindow(reportAnchorDat
   return true;
 }
 
+function endShift() {
+  if (!reportHasContent()) {
+    alert("No tasks or clock-in to end.");
+    return;
+  }
+
+  const runningTask = taskEntries().find(task => task.status === "running");
+  if (runningTask) {
+    if (!confirm(`End shift and stop "${displayTaskLabel(runningTask)}"?`)) return;
+    runningTask.elapsedBeforePause = getRawElapsedSeconds(runningTask);
+    runningTask.completedAt = nowISO();
+    runningTask.currentStart = "";
+    runningTask.status = "stopped";
+  } else if (!confirm("End shift and save the current report?")) {
+    return;
+  }
+
+  const { endDate } = shiftWindow(reportAnchorDate());
+  save();
+  saveCurrentReport(formatDate(endDate), true);
+  render();
+  openReportReview();
+}
+
 function checkAutoSaveReport() {
   const { endDate } = shiftWindow(reportAnchorDate());
   const dueAt = new Date(endDate.getTime() + 60 * 60 * 1000);
@@ -1124,7 +1490,8 @@ function checkAutoSaveReport() {
 function downloadSavedReport(id) {
   const saved = savedReports.find(r => r.id === id);
   if (!saved) return;
-  downloadTextReport(getSavedReportText(saved), `shift-report-${saved.shiftEndDate}.txt`);
+  const stamp = String(saved.shiftEndDate || formatDate(new Date())).replaceAll("/", "-");
+  downloadTextReport(getSavedReportText(saved), `shift-report-${stamp}.txt`);
 }
 
 async function copySavedReport(id) {
@@ -1135,9 +1502,11 @@ async function copySavedReport(id) {
 
 function getSavedReportText(saved) {
   if (saved.reports) {
-    return settings.taskStacking
+    const mode = settings.reportMode || "detailed";
+    const key = `${mode}${settings.taskStacking ? "Stacked" : "Unstacked"}`;
+    return saved.reports[key] || (settings.taskStacking
       ? saved.reports.stacked
-      : saved.reports.unstacked;
+      : saved.reports.unstacked);
   }
 
   return saved.report || "";
@@ -1152,10 +1521,13 @@ function deleteSavedReport(id) {
 
 function createTaskCard(task, displayTimes = null) {
   const elapsed = getElapsedSeconds(task);
+  const elapsedMinutes = Math.ceil(elapsed / 60);
   const displayStart = displayTimes ? displayTimes.start.toISOString() : task.firstStart;
-  const displayStop = displayTimes
-    ? displayTimes.stop.toISOString()
-    : task.completedAt;
+  const displayStop = task.status === "stopped"
+    ? displayTimes
+      ? displayTimes.stop.toISOString()
+      : task.completedAt
+    : "";
   const editBlock = settings.editEnabled ? `
     <div class="edit-grid">
       <label>
@@ -1181,8 +1553,8 @@ function createTaskCard(task, displayTimes = null) {
         <input type="datetime-local" value="${escapeAttr(toDateTimeLocalValue(task.completedAt))}" onchange="updateTaskField('${task.id}', 'completedAt', this.value)" />
       </label>
       <label>
-        <div class="muted">Elapsed seconds</div>
-        <input type="number" min="0" value="${elapsed}" onchange="updateTaskField('${task.id}', 'elapsedBeforePause', this.value)" />
+        <div class="muted">Elapsed minutes</div>
+        <input type="number" min="0" value="${elapsedMinutes}" onchange="updateTaskField('${task.id}', 'elapsedMinutes', this.value)" />
       </label>
     </div>
   ` : "";
@@ -1209,7 +1581,7 @@ function createTaskCard(task, displayTimes = null) {
           ${displayStop ? " - Completed " + escapeHTML(formatDateTime(displayStop)) : ""}
         </div>
       </div>
-      <div class="timer" data-timer-id="${escapeAttr(task.id)}">${formatSeconds(elapsed)}</div>
+      <div class="timer" data-timer-id="${escapeAttr(task.id)}">${formatDuration(elapsed)}</div>
     </div>
     <div class="task-button-row">
       ${buttons}
@@ -1259,27 +1631,44 @@ function updateLiveDisplay() {
     total += elapsed;
 
     const timer = Array.from(timerElements).find(el => el.dataset.timerId === task.id);
-    if (timer) timer.textContent = formatSeconds(elapsed);
+    if (timer) timer.textContent = formatDuration(elapsed);
   }
 
   const shift = shiftLengthSeconds();
   const left = Math.max(0, shift - total);
 
-  document.getElementById("totalLogged").textContent = formatHoursMinutes(total);
-  document.getElementById("shiftLength").textContent = formatHoursMinutes(shift);
-  document.getElementById("timeLeft").textContent = formatHoursMinutes(left);
+  document.getElementById("totalLogged").textContent = formatDuration(total);
+  document.getElementById("shiftLength").textContent = formatDuration(shift);
+  document.getElementById("timeLeft").textContent = formatDuration(left);
+  renderShiftSummary();
 }
 
 function renderSavedReports() {
   const container = document.getElementById("savedReports");
+  const searchInput = document.getElementById("savedReportSearch");
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
   container.innerHTML = "";
+
+  const filteredReports = savedReports.filter(saved => {
+    if (!query) return true;
+    return [
+      saved.shiftEndDate,
+      saved.savedAt,
+      getSavedReportText(saved)
+    ].join("\n").toLowerCase().includes(query);
+  });
 
   if (!savedReports.length) {
     container.innerHTML = `<div class="muted">No saved reports yet.</div>`;
     return;
   }
 
-  for (const saved of savedReports) {
+  if (!filteredReports.length) {
+    container.innerHTML = `<div class="muted" style="margin-top:10px;">No saved reports match.</div>`;
+    return;
+  }
+
+  for (const saved of filteredReports) {
     const div = document.createElement("div");
     div.className = "saved-report";
     div.innerHTML = `
@@ -1294,6 +1683,34 @@ function renderSavedReports() {
     `;
     container.appendChild(div);
   }
+}
+
+function renderShiftSummary() {
+  const container = document.getElementById("shiftSummary");
+  if (!container) return;
+
+  const groups = new Map();
+  for (const task of taskEntries()) {
+    const type = reportType(task);
+    const current = groups.get(type) || { total: 0, count: 0 };
+    current.total += getElapsedSeconds(task);
+    current.count += 1;
+    groups.set(type, current);
+  }
+
+  if (!groups.size) {
+    container.innerHTML = `<div class="muted">No task totals yet.</div>`;
+    return;
+  }
+
+  const rows = Array.from(groups.entries()).map(([type, data]) => `
+    <div class="summary-row">
+      <span>${escapeHTML(type)} (${data.count})</span>
+      <strong>${escapeHTML(formatDuration(data.total))}</strong>
+    </div>
+  `).join("");
+
+  container.innerHTML = `<div class="summary-grid">${rows}</div>`;
 }
 
 function render() {
@@ -1321,6 +1738,7 @@ function render() {
 
   updateLiveDisplay();
   renderSavedReports();
+  renderShiftSummary();
 
   clockInButton.textContent = clockInAt
     ? `Clocked in ${formatDateTime(clockInAt)}`
