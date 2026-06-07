@@ -246,6 +246,31 @@
     margin-top: 12px;
   }
 
+  .task-button-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .task-button-row button {
+    min-width: 0;
+    padding: 9px 8px;
+    font-size: 0.9rem;
+  }
+
+  .divider-card {
+    background: #171717;
+    border: 1px dashed #6c6c6c;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+
+  .divider-button {
+    width: 100%;
+    background: #4a4a4a;
+  }
+
   #runningTasks:not(:empty) {
     margin-top: 12px;
   }
@@ -334,6 +359,14 @@
     .new-item-grid button {
       width: auto;
     }
+
+    .task-button-row {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .task-button-row button {
+      width: auto;
+    }
   }
 </style>
 </head>
@@ -365,6 +398,8 @@
     </div>
     <div id="runningTasks"></div>
   </section>
+
+  <button class="divider-button" onclick="addDivider()">Divider</button>
 
   <section class="panel">
     <h2 style="margin-top:0;">Tasks</h2>
@@ -442,7 +477,7 @@
     <div id="activeTaskMessage" class="muted"></div>
     <div class="modal-actions">
       <button class="gray" onclick="closeActiveTaskModal()">Cancel</button>
-      <button class="pause" onclick="pauseActiveAndStartPending()">Pause active and start new task</button>
+      <button id="activeTaskAction" class="pause" onclick="pauseActiveAndContinue()">Pause active and start new task</button>
     </div>
   </div>
 </div>
@@ -453,6 +488,7 @@ let savedReports = JSON.parse(localStorage.getItem("shiftSavedReports") || "[]")
 let clockInAt = localStorage.getItem("shiftClockInAt") || "";
 let settings = JSON.parse(localStorage.getItem("shiftSettings") || "{}");
 let pendingStart = null;
+let pendingResumeId = "";
 
 function save() {
   localStorage.setItem("shiftTasks", JSON.stringify(tasks));
@@ -522,6 +558,20 @@ function displayTaskLabel(task) {
   const type = task.type || "";
   if (!type || label.toLowerCase().endsWith(type.toLowerCase())) return label;
   return `${label} - ${type}`;
+}
+
+function isDivider(entry) {
+  return entry && entry.kind === "divider";
+}
+
+function taskEntries() {
+  return tasks.filter(entry => !isDivider(entry));
+}
+
+function isBehindLatestDivider(entryId) {
+  const entryIndex = tasks.findIndex(entry => entry.id === entryId);
+  const dividerIndex = tasks.findIndex(entry => isDivider(entry));
+  return dividerIndex >= 0 && entryIndex > dividerIndex;
 }
 
 function readSettings() {
@@ -594,7 +644,7 @@ function getNewTaskDraft() {
   return { label, type };
 }
 
-function createTask(label, type) {
+function createTask(label, type, notes = "") {
   if (!clockInAt) clockInAt = nowISO();
 
   const task = {
@@ -608,7 +658,7 @@ function createTask(label, type) {
     completedAt: "",
     elapsedBeforePause: 0,
     pauseCount: 0,
-    notes: ""
+    notes
   };
 
   tasks.unshift(task);
@@ -617,38 +667,69 @@ function createTask(label, type) {
   render();
 }
 
+function createTaskCopy(sourceTask, action) {
+  createTask(
+    `${displayTaskLabel(sourceTask)} - ${action}`,
+    ""
+  );
+}
+
+function addDivider() {
+  tasks.unshift({
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
+    kind: "divider",
+    createdAt: nowISO()
+  });
+  save();
+  render();
+}
+
 function startTask() {
   const draft = getNewTaskDraft();
   if (!draft) return;
 
-  const runningTask = tasks.find(t => t.status === "running");
+  const runningTask = taskEntries().find(t => t.status === "running");
   if (runningTask) {
-    showActiveTaskModal(runningTask, draft);
+    showStartConflictModal(runningTask, draft);
     return;
   }
 
   createTask(draft.label, draft.type);
 }
 
-function showActiveTaskModal(runningTask, draft) {
+function showStartConflictModal(runningTask, draft) {
   pendingStart = draft;
+  pendingResumeId = "";
   document.getElementById("activeTaskMessage").textContent =
     `"${displayTaskLabel(runningTask)}" is running. Pause it and start "${displayTaskLabel(draft)}"?`;
+  document.getElementById("activeTaskAction").textContent = "Pause active and start new task";
+  document.getElementById("activeTaskTitle").textContent = "Active timer running";
+  document.getElementById("activeTaskModal").classList.add("open");
+}
+
+function showResumeConflictModal(runningTask, resumeTaskEntry) {
+  pendingStart = null;
+  pendingResumeId = resumeTaskEntry.id;
+  document.getElementById("activeTaskMessage").textContent =
+    `"${displayTaskLabel(runningTask)}" is running. Pause it and resume "${displayTaskLabel(resumeTaskEntry)}"?`;
+  document.getElementById("activeTaskAction").textContent = "Pause current and resume this task";
+  document.getElementById("activeTaskTitle").textContent = "Active timer running";
   document.getElementById("activeTaskModal").classList.add("open");
 }
 
 function closeActiveTaskModal() {
   pendingStart = null;
+  pendingResumeId = "";
   document.getElementById("activeTaskModal").classList.remove("open");
 }
 
-function pauseActiveAndStartPending() {
-  if (!pendingStart) {
+function pauseActiveAndContinue() {
+  if (!pendingStart && !pendingResumeId) {
     closeActiveTaskModal();
     return;
   }
 
-  const runningTask = tasks.find(t => t.status === "running");
+  const runningTask = taskEntries().find(t => t.status === "running");
   if (runningTask) {
     runningTask.elapsedBeforePause = getElapsedSeconds(runningTask);
     runningTask.currentStart = "";
@@ -657,9 +738,17 @@ function pauseActiveAndStartPending() {
   }
 
   const draft = pendingStart;
+  const resumeId = pendingResumeId;
   pendingStart = null;
+  pendingResumeId = "";
   document.getElementById("activeTaskModal").classList.remove("open");
-  createTask(draft.label, draft.type);
+
+  if (draft) {
+    createTask(draft.label, draft.type);
+    return;
+  }
+
+  resumeTaskNow(resumeId);
 }
 
 function pauseTask(id) {
@@ -679,9 +768,21 @@ function resumeTask(id) {
   const task = tasks.find(t => t.id === id);
   if (!task || task.status !== "paused") return;
 
-  const runningTask = tasks.find(t => t.status === "running");
+  const runningTask = taskEntries().find(t => t.status === "running");
   if (runningTask) {
-    alert(`Finish, pause, or stop "${runningTask.label}" before resuming another item.`);
+    showResumeConflictModal(runningTask, task);
+    return;
+  }
+
+  resumeTaskNow(id);
+}
+
+function resumeTaskNow(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task || task.status !== "paused") return;
+
+  if (isBehindLatestDivider(id)) {
+    createTaskCopy(task, "Resumed");
     return;
   }
 
@@ -709,9 +810,14 @@ function reviveTask(id) {
   const task = tasks.find(t => t.id === id);
   if (!task || task.status !== "stopped") return;
 
-  const runningTask = tasks.find(t => t.status === "running");
+  const runningTask = taskEntries().find(t => t.status === "running");
   if (runningTask) {
     alert(`Finish, pause, or stop "${runningTask.label}" before reviving another item.`);
+    return;
+  }
+
+  if (isBehindLatestDivider(id)) {
+    createTaskCopy(task, "Revived");
     return;
   }
 
@@ -725,6 +831,13 @@ function reviveTask(id) {
 
 function deleteTask(id) {
   if (!confirm("Delete this item?")) return;
+  tasks = tasks.filter(t => t.id !== id);
+  save();
+  render();
+}
+
+function deleteDivider(id) {
+  if (!confirm("Delete this divider?")) return;
   tasks = tasks.filter(t => t.id !== id);
   save();
   render();
@@ -793,7 +906,7 @@ function shiftWindow(referenceDate = new Date()) {
 function reportAnchorDate() {
   const dates = [
     clockInAt,
-    ...tasks.map(t => t.firstStart || t.createdAt)
+    ...taskEntries().map(t => t.firstStart || t.createdAt)
   ].filter(Boolean).map(value => new Date(value));
 
   if (!dates.length) return new Date();
@@ -842,11 +955,17 @@ function buildReport(useStacking = settings.taskStacking) {
     blocks.push(`Clock in - ${formatDateTime(clockInAt)}`);
   }
 
-  const orderedTasks = tasks.slice().reverse();
+  const orderedEntries = tasks.slice().reverse();
+  const orderedTasks = orderedEntries.filter(entry => !isDivider(entry));
   const stackedTimes = useStacking ? stackedTaskTimes(orderedTasks) : [];
+  const stackedTimesById = new Map(orderedTasks.map((task, index) => [task.id, stackedTimes[index]]));
 
-  const taskBlocks = orderedTasks.map((t, index) => {
-    const stacked = stackedTimes[index];
+  const taskBlocks = orderedEntries.map((t) => {
+    if (isDivider(t)) {
+      return `Divider - ${formatDateTime(t.createdAt)}`;
+    }
+
+    const stacked = stackedTimesById.get(t.id);
     const startTime = stacked ? formatDateTime(stacked.start.toISOString()) : formatDateTime(t.firstStart);
     const stopTime = stacked
       ? formatDateTime(stacked.stop.toISOString())
@@ -861,6 +980,55 @@ function buildReport(useStacking = settings.taskStacking) {
   });
 
   return [...blocks, ...taskBlocks].join("\n\n");
+}
+
+function buildSegmentReport(dividerId, useStacking = settings.taskStacking) {
+  const orderedEntries = tasks.slice().reverse();
+  const dividerIndex = orderedEntries.findIndex(entry => entry.id === dividerId);
+  if (dividerIndex < 0) return "";
+
+  const previousDividerIndex = orderedEntries
+    .slice(0, dividerIndex)
+    .map((entry, index) => isDivider(entry) ? index : -1)
+    .filter(index => index >= 0)
+    .pop();
+
+  const startIndex = previousDividerIndex === undefined ? 0 : previousDividerIndex + 1;
+  const segmentEntries = orderedEntries.slice(startIndex, dividerIndex);
+  const segmentTasks = segmentEntries.filter(entry => !isDivider(entry));
+  const stackedTimes = useStacking ? stackedTaskTimes(segmentTasks) : [];
+  const stackedTimesById = new Map(segmentTasks.map((task, index) => [task.id, stackedTimes[index]]));
+
+  const blocks = [];
+  if (settings.userName) blocks.push(`USER - ${settings.userName}`);
+  if (clockInAt && startIndex === 0) blocks.push(`Clock in - ${formatDateTime(clockInAt)}`);
+
+  const taskBlocks = segmentTasks.map((task) => {
+    const stacked = stackedTimesById.get(task.id);
+    const startTime = stacked ? formatDateTime(stacked.start.toISOString()) : formatDateTime(task.firstStart);
+    const stopTime = stacked
+      ? formatDateTime(stacked.stop.toISOString())
+      : task.completedAt ? formatDateTime(task.completedAt) : "Open";
+    const notes = (task.notes || "").trim() || "None";
+
+    return [
+      displayTaskLabel(task),
+      `${formatSeconds(getElapsedSeconds(task))} - ${startTime} - ${stopTime}`,
+      notes
+    ].join("\n");
+  });
+
+  return [...blocks, ...taskBlocks].join("\n\n");
+}
+
+async function copyDividerSegment(dividerId) {
+  const report = buildSegmentReport(dividerId, settings.taskStacking);
+  if (!report) {
+    alert("No tasks in this segment.");
+    return;
+  }
+
+  await copyText(report);
 }
 
 function downloadTextReport(report, filename) {
@@ -909,7 +1077,7 @@ async function copyReport() {
 }
 
 function reportHasContent() {
-  return Boolean(clockInAt) || tasks.length > 0;
+  return Boolean(clockInAt) || taskEntries().length > 0;
 }
 
 function saveCurrentReport(shiftEndDate = formatDate(shiftWindow(reportAnchorDate()).endDate), silent = false) {
@@ -1043,7 +1211,7 @@ function createTaskCard(task, displayTimes = null) {
       </div>
       <div class="timer" data-timer-id="${escapeAttr(task.id)}">${formatSeconds(elapsed)}</div>
     </div>
-    <div class="row">
+    <div class="task-button-row">
       ${buttons}
       <button class="gray" onclick="deleteTask('${task.id}')">Delete</button>
     </div>
@@ -1062,11 +1230,31 @@ function createTaskCard(task, displayTimes = null) {
   return div;
 }
 
+function createDividerCard(divider) {
+  const div = document.createElement("div");
+  div.className = "divider-card";
+  div.innerHTML = `
+    <div class="task-title">
+      <div>
+        <div class="label">Divider</div>
+        <div class="muted">Added ${escapeHTML(formatDateTime(divider.createdAt))}</div>
+      </div>
+    </div>
+    <div class="task-button-row">
+      <button class="blue" onclick="copyDividerSegment('${divider.id}')">Copy segment</button>
+      <button class="gray" disabled>Segment</button>
+      <button class="gray" onclick="deleteDivider('${divider.id}')">Delete</button>
+    </div>
+  `;
+
+  return div;
+}
+
 function updateLiveDisplay() {
   let total = 0;
   const timerElements = document.querySelectorAll("[data-timer-id]");
 
-  for (const task of tasks) {
+  for (const task of taskEntries()) {
     const elapsed = getElapsedSeconds(task);
     total += elapsed;
 
@@ -1117,13 +1305,18 @@ function render() {
   runningContainer.innerHTML = "";
   container.innerHTML = "";
 
-  const displayOrder = tasks.slice().reverse();
+  const displayOrder = taskEntries().slice().reverse();
   const stackedTimes = settings.taskStacking ? stackedTaskTimes(displayOrder) : [];
   const displayTimesById = new Map(displayOrder.map((task, index) => [task.id, stackedTimes[index]]));
 
-  for (const task of tasks) {
-    const target = task.status === "running" ? runningContainer : container;
-    target.appendChild(createTaskCard(task, displayTimesById.get(task.id)));
+  for (const entry of tasks) {
+    if (isDivider(entry)) {
+      container.appendChild(createDividerCard(entry));
+      continue;
+    }
+
+    const target = entry.status === "running" ? runningContainer : container;
+    target.appendChild(createTaskCard(entry, displayTimesById.get(entry.id)));
   }
 
   updateLiveDisplay();
